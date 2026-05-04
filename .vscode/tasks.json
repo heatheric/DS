@@ -1,0 +1,125 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "构建项目 (Release)",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "${workspaceFolder}/build", "--config", "Release"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "构建项目 (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "${workspaceFolder}/build",
+        "--config",
+        "RelWithDebInfo"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "清理构建",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "${workspaceFolder}/build", "--target", "clean"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "重新配置CMake (Release)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-B",
+        "${workspaceFolder}/build",
+        "-S",
+        "${workspaceFolder}",
+        "-G",
+        "MinGW Makefiles",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_C_COMPILER=D:/Program/mingw64_gcc12/bin/gcc.exe",
+        "-DCMAKE_CXX_COMPILER=D:/Program/mingw64_gcc12/bin/g++.exe",
+        "-DCMAKE_MAKE_PROGRAM=D:/Program/mingw64_gcc12/bin/mingw32-make.exe"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "重新配置CMake (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-B",
+        "${workspaceFolder}/build",
+        "-S",
+        "${workspaceFolder}",
+        "-G",
+        "MinGW Makefiles",
+        "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+        "-DCMAKE_C_COMPILER=D:/Program/mingw64_gcc12/bin/gcc.exe",
+        "-DCMAKE_CXX_COMPILER=D:/Program/mingw64_gcc12/bin/g++.exe",
+        "-DCMAKE_MAKE_PROGRAM=D:/Program/mingw64_gcc12/bin/mingw32-make.exe"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "运行程序 (Release)",
+      "type": "shell",
+      "command": "${workspaceFolder}/bin/ScreenRecorderPlayer.exe",
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "dependsOn": "构建项目 (Release)"
+    },
+    {
+      "label": "运行程序 (RelWithDebInfo)",
+      "type": "shell",
+      "command": "${workspaceFolder}/bin/ScreenRecorderPlayer.exe",
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "dependsOn": "构建项目 (RelWithDebInfo)"
+    }
+  ]
+}

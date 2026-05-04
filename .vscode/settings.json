@@ -1,0 +1,43 @@
+{
+  "cmake.configureOnOpen": true,
+  "cmake.buildDirectory": "${workspaceFolder}/build",
+  "cmake.generator": "MinGW Makefiles",
+  "cmake.cmakePath": "cmake",
+  "cmake.preferredGenerators": ["MinGW Makefiles"],
+  "cmake.environment": {
+    "PATH": "D:/Program/mingw64_gcc12/bin;D:/Program/ffmpeg/bin;X:/Qt/5.15.13/gcc12/bin;${env:PATH}"
+  },
+  "cmake.configureSettings": {
+    "CMAKE_MAKE_PROGRAM": "D:/Program/mingw64_gcc12/bin/mingw32-make.exe",
+    "CMAKE_C_COMPILER": "D:/Program/mingw64_gcc12/bin/gcc.exe",
+    "CMAKE_CXX_COMPILER": "D:/Program/mingw64_gcc12/bin/g++.exe"
+  },
+  "cmake.cleanFirst": true,
+  "cmake.defaultTarget": "ScreenRecorderPlayer",
+  "cmake.launchTarget": "ScreenRecorderPlayer",
+  "cmake.debugConfig": {
+    "MIMode": "gdb",
+    "miDebuggerPath": "D:/Program/mingw64_gcc12/bin/gdb.exe",
+    "environment": [
+      {
+        "name": "PATH",
+        "value": "D:/Program/mingw64_gcc12/bin;D:/Program/ffmpeg/bin;X:/Qt/5.15.13/gcc12/bin;${env:PATH}"
+      }
+    ],
+    "cwd": "${workspaceFolder}"
+  },
+  "files.associations": {
+    "*.hpp": "cpp",
+    "*.cpp": "cpp",
+    "*.h": "cpp"
+  },
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.errorSquiggles": "enabled",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit"
+  },
+  "terminal.integrated.env.windows": {
+    "PATH": "D:/Program/mingw64_gcc12/bin;D:/Program/ffmpeg/bin;X:/Qt/5.15.13/gcc12/bin;${env:PATH}"
+  }
+}

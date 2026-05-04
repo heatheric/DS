@@ -1,0 +1,33 @@
+{
+  "configurations": [
+    {
+      "name": "ScreenRecorderPlayer",
+      "includePath": [
+        "${workspaceFolder}/hpp",
+        "D:/Program/mingw64_gcc12/include",
+        "D:/Program/ffmpeg/include",
+        "X:/Qt/5.15.13/gcc12/include",
+        "X:/Qt/5.15.13/gcc12/include/QtCore",
+        "X:/Qt/5.15.13/gcc12/include/QtWidgets",
+        "X:/Qt/5.15.13/gcc12/include/QtGui",
+        "X:/Qt/5.15.13/gcc12/include/QtOpenGL",
+        "X:/Qt/5.15.13/gcc12/include/QtConcurrent"
+      ],
+      "defines": [
+        "QT_CORE_LIB",
+        "QT_GUI_LIB",
+        "QT_WIDGETS_LIB",
+        "QT_OPENGL_LIB",
+        "QT_CONCURRENT_LIB",
+        "UNICODE",
+        "_UNICODE"
+      ],
+      "compilerPath": "D:/Program/mingw64_gcc12/bin/g++.exe",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "windows-gcc-x64",
+      "configurationProvider": "ms-vscode.cmake-tools"
+    }
+  ],
+  "version": 4
+}

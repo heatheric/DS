@@ -1,0 +1,11 @@
+build/
+bin/
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+moc_*.cpp
+moc_*.cpp.d
+mocs_compilation.cpp

@@ -1,0 +1,17 @@
+{
+  "buildType": {
+    "default": "relwithdebinfo",
+    "choices": {
+      "relwithdebinfo": {
+        "short": "RelWithDebInfo",
+        "long": "带调试信息的优化构建（推荐调试用）",
+        "buildType": "RelWithDebInfo"
+      },
+      "release": {
+        "short": "Release",
+        "long": "完全优化构建",
+        "buildType": "Release"
+      }
+    }
+  }
+}
