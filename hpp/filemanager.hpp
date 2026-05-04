@@ -43,6 +43,12 @@ public:
     QString getWorkdirPath() const;
 
     /**
+     * @brief 获取当前日期子目录路径
+     * @return 日期目录路径
+     */
+    QString getCurrentDateDir() const;
+
+    /**
      * @brief 生成新的视频文件名
      * @return 生成的文件名（不含路径）
      */

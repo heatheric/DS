@@ -4,14 +4,36 @@
 #include <QObject>
 #include <QThread>
 #include <QElapsedTimer>
+#include <QString>
 #include <atomic>
+
+#include <d3d11.h>
+#include <dxgi1_2.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+#include <libavdevice/avdevice.h>
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersrc.h>
+#include <libavfilter/buffersink.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
+#ifdef __cplusplus
+}
+#endif
 
 /**
  * @brief 屏幕录制类，负责屏幕捕获、视频编码和文件封装
  *
  * 该类使用FFmpeg8 API实现屏幕录制功能，包括：
- * - 使用AVFilterContext、AVFilter等获取屏幕BGRA数据
- * - 无损压缩并立即封装
+ * - 使用ddagrab设备（Desktop Duplication API）捕获主屏幕BGRA数据
+ * - 通过AVFilterGraph（buffer→format→buffersink）进行格式转换(bgra→bgr0)
+ * - 使用FFV1无损编码器压缩
+ * - 封装为MKV容器格式
  * - 固定录制800x600区域，20fps帧率
  *
  * 线程模型：使用QThread::create()创建录制线程，
@@ -33,6 +55,17 @@ public:
     };
 
     /**
+     * @brief 捕获后端枚举
+     */
+    enum CaptureBackend
+    {
+        Backend_None,    ///< 未选择
+        Backend_Ddagrab, ///< FFmpeg ddagrab 设备
+        Backend_Gdigrab, ///< FFmpeg gdigrab 设备
+        Backend_Dxgi     ///< 原生 DXGI Desktop Duplication
+    };
+
+    /**
      * @brief 构造函数
      * @param parent 父对象指针
      */
@@ -44,10 +77,16 @@ public:
     ~ScreenRecorder();
 
     /**
-     * @brief 初始化录制环境
+     * @brief 初始化录制环境（注册avdevice）
      * @return 初始化是否成功
      */
     bool initialize();
+
+    /**
+     * @brief 设置输出目录路径
+     * @param dir 输出目录路径
+     */
+    void setOutputDir(const QString &dir);
 
     /**
      * @brief 开始录制
@@ -99,12 +138,58 @@ signals:
 
 private:
     /**
+     * @brief 打开输入设备（自动选择最佳后端）
+     * @return 成功返回true
+     */
+    bool openInput();
+
+    /**
+     * @brief 尝试打开 DXGI Desktop Duplication
+     * @return 成功返回true
+     */
+    bool openDxgi();
+
+    /**
+     * @brief 从 DXGI 捕获一帧并填充为 BGRA AVFrame
+     * @param frame 待填充的 AVFrame（调用者分配）
+     * @return 成功获取新帧返回true，超时/失败返回false
+     */
+    bool captureDxgiFrame(AVFrame *frame);
+
+    /**
+     * @brief 关闭 DXGI 捕获资源
+     */
+    void closeDxgi();
+
+    /**
+     * @brief 创建输出文件和编码器
+     * @return 成功返回true
+     */
+    bool createOutput();
+
+    /**
+     * @brief 创建滤镜图（buffer→format→buffersink）
+     * @return 成功返回true
+     */
+    bool createFilterGraph();
+
+    /**
      * @brief 录制线程主循环（在子线程中执行）
      */
     void recordingLoop();
 
     /**
-     * @brief 清理资源
+     * @brief 关闭输入设备
+     */
+    void closeInput();
+
+    /**
+     * @brief 关闭输出文件
+     */
+    void closeOutput();
+
+    /**
+     * @brief 清理所有资源
      */
     void cleanup();
 
@@ -125,11 +210,38 @@ private:
     QElapsedTimer m_recordingTimer; ///< 录制计时器（精确计时）
     int m_recordingSeconds;         ///< 录制秒数
     QString m_currentFileName;      ///< 当前文件名
+    QString m_outputDir;            ///< 输出目录路径
 
-    // FFmpeg相关成员变量（留空，第二阶段实现）
-    void *m_avFormatContext; ///< 格式上下文
-    void *m_avCodecContext;  ///< 编码器上下文
-    void *m_avFilterGraph;   ///< 过滤器图
+    // 输入设备（自动选择最佳后端）
+    CaptureBackend m_captureBackend; ///< 当前使用的捕获后端
+    AVFormatContext *m_inputFmtCtx;  ///< 输入格式上下文（ddagrab/gdigrab）
+    AVCodecContext *m_decoderCtx;    ///< 原始视频解码器上下文（ddagrab/gdigrab）
+    int m_inputVideoStreamIdx;       ///< 输入视频流索引（ddagrab/gdigrab）
+
+    // DXGI 原生捕获
+    ID3D11Device *m_d3dDevice;         ///< D3D11 设备
+    ID3D11DeviceContext *m_d3dContext; ///< D3D11 设备上下文
+    IDXGIOutputDuplication *m_dxgiDup; ///< 桌面复制接口
+    ID3D11Texture2D *m_dxgiStagingTex; ///< 暂存纹理（CPU可读）
+    UINT m_dxgiOutputWidth;            ///< 输出宽度
+    UINT m_dxgiOutputHeight;           ///< 输出高度
+
+    // 滤镜图
+    AVFilterGraph *m_filterGraph;     ///< 滤镜图
+    AVFilterContext *m_bufferSrcCtx;  ///< buffer源滤镜上下文
+    AVFilterContext *m_bufferSinkCtx; ///< buffersink滤镜上下文
+
+    // 编码输出
+    AVFormatContext *m_outputFmtCtx; ///< 输出格式上下文
+    AVCodecContext *m_encoderCtx;    ///< FFV1编码器上下文
+    AVStream *m_outputStream;        ///< 输出视频流
+    int64_t m_frameCount;            ///< 帧计数器（用于PTS）
+
+    // 工作对象
+    AVFrame *m_frame;         ///< 工作帧（解码输入）
+    AVFrame *m_filteredFrame; ///< 工作帧（滤镜输出）
+    AVPacket *m_packet;       ///< 工作包（解码输入）
+    AVPacket *m_encPkt;       ///< 工作包（编码输出）
 };
 
 #endif // SCREENRECORDER_HPP

@@ -198,6 +198,8 @@ if(WIN32)
         user32
         gdi32
         opengl32
+        d3d11
+        dxgi
     )
     
     # 设置运行时库
@@ -209,6 +211,52 @@ if(WIN32)
 endif()
 
 # workdir目录由运行时程序自行检查创建
+
+# 测试目标：录屏功能测试
+add_executable(TestRecorder
+    cpp/test_recorder.cpp
+    cpp/screenrecorder.cpp
+    cpp/filemanager.cpp
+    hpp/screenrecorder.hpp
+    hpp/filemanager.hpp
+)
+
+target_link_libraries(TestRecorder
+    Qt5::Core
+    ${FFMPEG_LIBRARIES}
+    ws2_32
+    user32
+    gdi32
+    opengl32
+    d3d11
+    dxgi
+)
+
+target_compile_definitions(TestRecorder
+    PRIVATE
+        QT_DEPRECATED_WARNINGS
+)
+
+# 测试目标：FFmpeg解码 + QOpenGL渲染测试
+add_executable(TestPlayer
+    cpp/test_player.cpp
+)
+
+target_link_libraries(TestPlayer
+    Qt5::Core
+    Qt5::Widgets
+    Qt5::Gui
+    ${FFMPEG_LIBRARIES}
+    ws2_32
+    user32
+    gdi32
+    opengl32
+)
+
+target_compile_definitions(TestPlayer
+    PRIVATE
+        QT_DEPRECATED_WARNINGS
+)
 
 # 构建后信息显示
 message(STATUS "项目配置完成:")
