@@ -1,91 +1,135 @@
 {
+  // ============================================================================
+  // F5 调试 DLL 加载问题的两种解决方案
+  //
+  // 问题：cppdbg 在 Windows 上无法通过 "environment"/"env" 字段将 PATH 传递给
+  //       目标进程，导致 0xC0000135 (STATUS_DLL_NOT_FOUND)。
+  //
+  // 方法 A（当前使用）: 通过 .bat 脚本在 GDB 启动前注入 PATH
+  //   原理：miDebuggerPath 指向一个批处理脚本。OS 先执行 set PATH=...，
+  //        然后 gdb.exe %* 透传所有参数。GDB 继承批处理的环境（含正确的 PATH），
+  //        进而 GDB 的子进程（目标 exe）也继承正确 PATH。
+  //        链路：cppdbg → cmd.exe(.bat) → set PATH → gdb.exe(%*) → 目标 exe
+  //        优点：纯 OS 层面操作，无 GDB CLI/MI 协议依赖
+  //        缺点：迁移时需修改 .bat 中的硬编码路径
+  //
+  // 方法 B（备用）: GDB CLI 的 set environment + targetArchitecture
+  //   原理：targetArchitecture:"amd64" 消除 GDB 架构检测警告，使 GDB 进入
+  //        稳定模式。customLaunchSetupCommands 通过 CLI 通道（非 MI）发送
+  //        "set environment PATH = ...;$env(PATH)"。GDB CLI 的 "=" 语法将
+  //        整个路径值作为单个参数，分号不被截断（MI 通道会截断）。
+  //        链路：cppdbg → GDB → CLI set environment → CreateProcess → 目标 exe
+  //        优点：所有配置集中在 launch.json
+  //        缺点：两项缺一不可（targetArchitecture + customLaunchSetupCommands）
+  //
+  // 切换方法：注释/取消注释对应字段即可。
+  // ============================================================================
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "调试 ScreenRecorderPlayer (Release)",
+      "name": "Debug (test_dxgi_recorder)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/bin/test_dxgi_recorder.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "externalConsole": true,
+      "MIMode": "gdb",
+
+      // ---- 方法 A：.bat 脚本注入 PATH（当前激活） ----
+      "miDebuggerPath": "${workspaceFolder}/bin/test_dxgi_recorder_debug.bat",
+
+      // ---- 方法 B：GDB CLI set environment（备用，注释掉） ----
+      // "miDebuggerPath": "${config:custom.mingwBase}/bin/gdb.exe",
+      // "targetArchitecture": "amd64",
+      //   ← 消除 "Debuggee TargetArchitecture not detected" 警告，稳定 GDB 行为
+      // "customLaunchSetupCommands": [
+      //   {
+      //     "text": "set environment PATH = D:\\Program\\mingw64_gcc12\\bin;X:\\Qt\\5.15.13\\gcc12\\bin;D:\\Program\\ffmpeg\\bin;$env(PATH)",
+      //     "ignoreFailures": false
+      //   }
+      // ],
+      //   ← CLI 通道发送，分号不被 MI 截断；PATH = ...$env(PATH) 继承系统 PATH
+
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "test_dxgi_recorder: build (RelWithDebInfo)"
+    },
+    {
+      "name": "Debug (ScreenRecorderPlayer)",
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/bin/ScreenRecorderPlayer.exe",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
-      "environment": [
-        {
-          "name": "PATH",
-          "value": "D:/Program/mingw64_gcc12/bin;D:/Program/ffmpeg/bin;X:/Qt/5.15.13/gcc12/bin;${env:PATH}"
-        }
-      ],
-      "externalConsole": false,
+      "externalConsole": true,
       "MIMode": "gdb",
-      "miDebuggerPath": "D:/Program/mingw64_gcc12/bin/gdb.exe",
+
+      // ---- 方法 A：.bat 脚本注入 PATH（当前激活） ----
+      "miDebuggerPath": "${workspaceFolder}/bin/ScreenRecorderPlayer_debug.bat",
+
+      // ---- 方法 B：GDB CLI set environment（备用，注释掉） ----
+      // "miDebuggerPath": "${config:custom.mingwBase}/bin/gdb.exe",
+      // "targetArchitecture": "amd64",
+      //   ← 消除 "Debuggee TargetArchitecture not detected" 警告，稳定 GDB 行为
+      // "customLaunchSetupCommands": [
+      //   {
+      //     "text": "set environment PATH = D:\\Program\\mingw64_gcc12\\bin;X:\\Qt\\5.15.13\\gcc12\\bin;D:\\Program\\ffmpeg\\bin;$env(PATH)",
+      //     "ignoreFailures": false
+      //   }
+      // ],
+      //   ← CLI 通道发送，分号不被 MI 截断；PATH = ...$env(PATH) 继承系统 PATH
+
       "setupCommands": [
         {
-          "description": "为 gdb 启用整齐打印",
+          "description": "Enable pretty-printing for gdb",
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
       ],
-      "preLaunchTask": "构建项目 (Release)",
-      "logging": {
-        "moduleLoad": false,
-        "engineLogging": false
-      }
+      "preLaunchTask": "ScreenRecorderPlayer: build (RelWithDebInfo)"
     },
     {
-      "name": "调试 ScreenRecorderPlayer (RelWithDebInfo)",
+      "name": "Debug (test_ffmpeg_player)",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/bin/ScreenRecorderPlayer.exe",
+      "program": "${workspaceFolder}/bin/test_ffmpeg_player.exe",
       "args": [],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
-      "environment": [
-        {
-          "name": "PATH",
-          "value": "D:/Program/mingw64_gcc12/bin;D:/Program/ffmpeg/bin;X:/Qt/5.15.13/gcc12/bin;${env:PATH}"
-        }
-      ],
-      "externalConsole": false,
+      "externalConsole": true,
       "MIMode": "gdb",
-      "miDebuggerPath": "D:/Program/mingw64_gcc12/bin/gdb.exe",
+
+      // ---- 方法 A：.bat 脚本注入 PATH（当前激活） ----
+      "miDebuggerPath": "${workspaceFolder}/bin/test_ffmpeg_player_debug.bat",
+
+      // ---- 方法 B：GDB CLI set environment（备用，注释掉） ----
+      // "miDebuggerPath": "${config:custom.mingwBase}/bin/gdb.exe",
+      // "targetArchitecture": "amd64",
+      //   ← 消除 "Debuggee TargetArchitecture not detected" 警告，稳定 GDB 行为
+      // "customLaunchSetupCommands": [
+      //   {
+      //     "text": "set environment PATH = D:\\Program\\mingw64_gcc12\\bin;X:\\Qt\\5.15.13\\gcc12\\bin;D:\\Program\\ffmpeg\\bin;$env(PATH)",
+      //     "ignoreFailures": false
+      //   }
+      // ],
+      //   ← CLI 通道发送，分号不被 MI 截断；PATH = ...$env(PATH) 继承系统 PATH
+
       "setupCommands": [
         {
-          "description": "为 gdb 启用整齐打印",
+          "description": "Enable pretty-printing for gdb",
           "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
       ],
-      "preLaunchTask": "构建项目 (RelWithDebInfo)",
-      "logging": {
-        "moduleLoad": false,
-        "engineLogging": false
-      }
-    },
-    {
-      "name": "调试 CMake 目标",
-      "type": "cppdbg",
-      "request": "launch",
-      "program": "${command:cmake.launchTargetPath}",
-      "args": [],
-      "stopAtEntry": false,
-      "cwd": "${workspaceFolder}",
-      "environment": [
-        {
-          "name": "PATH",
-          "value": "D:/Program/mingw64_gcc12/bin;D:/Program/ffmpeg/bin;X:/Qt/5.15.13/gcc12/bin;${env:PATH}"
-        }
-      ],
-      "externalConsole": false,
-      "MIMode": "gdb",
-      "miDebuggerPath": "D:/Program/mingw64_gcc12/bin/gdb.exe",
-      "setupCommands": [
-        {
-          "description": "为 gdb 启用整齐打印",
-          "text": "-enable-pretty-printing",
-          "ignoreFailures": true
-        }
-      ],
-      "preLaunchTask": "CMake: 构建"
+      "preLaunchTask": "test_ffmpeg_player: build (RelWithDebInfo)"
     }
   ]
 }

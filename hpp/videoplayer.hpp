@@ -1,67 +1,94 @@
 #ifndef VIDEOPLAYER_HPP
 #define VIDEOPLAYER_HPP
 
-#include <QObject>
-#include <QThread>
+#include <QWidget>
 #include <QElapsedTimer>
-#include <atomic>
 
+class QOpenGLWidget;
+class QPushButton;
+class QLabel;
+class QComboBox;
+class QSpinBox;
+class QThread;
+class FileManager;
 struct AVFormatContext;
 struct AVCodecContext;
 struct AVFrame;
 struct SwsContext;
 struct AVPacket;
 
-class VideoPlayer : public QObject
+struct VideoInfo
+{
+    int width;
+    int height;
+    double frameRate;
+    int duration;
+    QString codecName;
+    QString pixelFormat;
+};
+
+class VideoPlayer : public QWidget
 {
     Q_OBJECT
 
 public:
-    enum PlayState
+    enum State
     {
-        Stopped,
-        Playing,
-        Paused,
+        Empty,
+        NonEmptyPlaying,
+        NonEmptyPaused,
+        NonEmptyStopped,
         Error
     };
+    Q_ENUM(State)
 
-    explicit VideoPlayer(QObject *parent = nullptr);
+    explicit VideoPlayer(FileManager *fileManager, QWidget *parent = nullptr);
     ~VideoPlayer();
 
-    bool initialize();
-    bool openFile(const QString &filePath);
-    bool startPlayback();
-    void pausePlayback();
-    void resumePlayback();
-    void stopPlayback();
-
-    PlayState getPlayState() const;
-    int getDuration() const;
-    int getCurrentPosition() const;
-    int getVideoWidth() const;
-    int getVideoHeight() const;
+    State getState() const;
+    const VideoInfo &getVideoInfo() const;
+    int getFrameCount() const;
+    QString getErrorString() const;
 
 signals:
-    void playStateChanged(PlayState state);
-    void playbackPositionUpdated(int position);
-    void playbackFinished();
-    void playbackError(const QString &errorMessage);
-    void frameReady(const uint8_t *data, int width, int height, int linesize);
+    void stateChanged(VideoPlayer::State state);
+    void frameCountUpdated(int frameCount);
+    void videoInfoChanged(const VideoInfo &info);
+    void errorOccurred(const QString &errorMessage);
+
+private slots:
+    void onPlayClicked();
+    void onPauseResumeClicked();
+    void onStopClicked();
+    void onBrowseFolder();
+    void onFileSelected(int index);
 
 private:
-    void playbackLoop();
-    void closeVideo();
-    void cleanup();
-    void setPlayState(PlayState state);
+    void initUI();
+    void setState(State state);
 
-    std::atomic<int> m_playState;
+    std::atomic<int> m_state;
+    VideoInfo m_videoInfo;
+    int m_frameCount;
+    QString m_errorString;
+
+    FileManager *m_fileManager;
+
+    QOpenGLWidget *m_videoWidget;
+    QComboBox *m_fileComboBox;
+    QPushButton *m_browseBtn;
+    QPushButton *m_playBtn;
+    QPushButton *m_pauseResumeBtn;
+    QPushButton *m_stopBtn;
+    QLabel *m_totalTimeLabel;
+    QLabel *m_currentTimeLabel;
+    QSpinBox *m_fpsSpinBox;
+    QLabel *m_statusLabel;
+
     QThread *m_playThread;
     QElapsedTimer m_playbackTimer;
     QString m_currentFile;
-    int m_duration;
-    int m_currentPosition;
-    int m_videoWidth;
-    int m_videoHeight;
+    int m_totalDuration;
 
     AVFormatContext *m_fmtCtx;
     AVCodecContext *m_codecCtx;

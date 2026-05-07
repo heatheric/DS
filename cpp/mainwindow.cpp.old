@@ -1,0 +1,602 @@
+#include "../hpp/mainwindow.hpp"
+
+#include <QComboBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QTimer>
+#include <QVBoxLayout>
+#include <QDebug>
+#include <QTime>
+#include <QOpenGLWidget>
+#include <QOpenGLFunctions>
+#include <QMutex>
+#include <QDir>
+#include <QFileInfo>
+
+#include "../hpp/tabmanager.hpp"
+#include "../hpp/filemanager.hpp"
+#include "../hpp/screenrecorder.hpp"
+#include "../hpp/videoplayer.hpp"
+
+class VideoRenderWidget : public QOpenGLWidget, protected QOpenGLFunctions
+{
+public:
+    VideoRenderWidget(QWidget *parent = nullptr)
+        : QOpenGLWidget(parent), m_texture(0), m_frameWidth(0), m_frameHeight(0),
+          m_buffer(nullptr), m_bufferSize(0), m_hasNewFrame(false)
+    {
+        setMinimumSize(640, 480);
+    }
+
+    ~VideoRenderWidget()
+    {
+        makeCurrent();
+        if (m_texture)
+        {
+            glDeleteTextures(1, &m_texture);
+            m_texture = 0;
+        }
+        doneCurrent();
+        delete[] m_buffer;
+    }
+
+    void presentFrame(const QByteArray &data, int width, int height, int linesize)
+    {
+        QMutexLocker locker(&m_mutex);
+
+        int bufSize = height * width * 4;
+        if (bufSize > m_bufferSize)
+        {
+            delete[] m_buffer;
+            m_buffer = new uint8_t[bufSize];
+            m_bufferSize = bufSize;
+        }
+
+        const uint8_t *src = reinterpret_cast<const uint8_t *>(data.constData());
+        if (linesize == width * 4)
+        {
+            memcpy(m_buffer, src, bufSize);
+        }
+        else
+        {
+            for (int y = 0; y < height; y++)
+            {
+                memcpy(m_buffer + y * width * 4, src + y * linesize, width * 4);
+            }
+        }
+
+        m_frameWidth = width;
+        m_frameHeight = height;
+        m_hasNewFrame = true;
+
+        update();
+    }
+
+    void reset()
+    {
+        QMutexLocker locker(&m_mutex);
+        m_frameWidth = 0;
+        m_frameHeight = 0;
+        m_hasNewFrame = true;
+        update();
+    }
+
+protected:
+    void initializeGL() override
+    {
+        initializeOpenGLFunctions();
+
+        glGenTextures(1, &m_texture);
+        glBindTexture(GL_TEXTURE_2D, m_texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    }
+
+    void paintGL() override
+    {
+        if (m_hasNewFrame)
+        {
+            m_hasNewFrame = false;
+
+            QMutexLocker locker(&m_mutex);
+
+            if (m_frameWidth > 0 && m_frameHeight > 0)
+            {
+                glBindTexture(GL_TEXTURE_2D, m_texture);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_frameWidth, m_frameHeight, 0,
+                             GL_BGRA, GL_UNSIGNED_BYTE, m_buffer);
+            }
+        }
+
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        if (m_frameWidth <= 0 || m_frameHeight <= 0)
+            return;
+
+        float widgetAspect = (float)width() / (float)height();
+        float frameAspect = (float)m_frameWidth / (float)m_frameHeight;
+
+        float drawW = 1.0f;
+        float drawH = 1.0f;
+        if (widgetAspect > frameAspect)
+        {
+            drawW = frameAspect / widgetAspect;
+        }
+        else
+        {
+            drawH = widgetAspect / frameAspect;
+        }
+
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, m_texture);
+
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f);
+        glVertex2f(-drawW, -drawH);
+        glTexCoord2f(1.0f, 1.0f);
+        glVertex2f(drawW, -drawH);
+        glTexCoord2f(1.0f, 0.0f);
+        glVertex2f(drawW, drawH);
+        glTexCoord2f(0.0f, 0.0f);
+        glVertex2f(-drawW, drawH);
+        glEnd();
+
+        glDisable(GL_TEXTURE_2D);
+    }
+
+private:
+    GLuint m_texture;
+    int m_frameWidth;
+    int m_frameHeight;
+    uint8_t *m_buffer;
+    int m_bufferSize;
+    bool m_hasNewFrame;
+    QMutex m_mutex;
+};
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent), m_tabWidget(nullptr), m_tabManager(nullptr),
+      m_fileManager(nullptr), m_screenRecorder(nullptr), m_videoPlayer(nullptr),
+      m_recordingTab(nullptr), m_startRecordBtn(nullptr), m_stopRecordBtn(nullptr),
+      m_recordingTimeLabel(nullptr), m_currentFileLabel(nullptr),
+      m_recordingTimer(nullptr), m_recordingSeconds(0), m_recordSlotLabel(nullptr),
+      m_playbackTab(nullptr), m_fileComboBox(nullptr), m_startPlayBtn(nullptr),
+      m_pausePlayBtn(nullptr), m_stopPlayBtn(nullptr), m_isPlaybackPaused(false),
+      m_playSlotLabel(nullptr), m_videoWidget(nullptr),
+      m_mainLayout(nullptr), m_recordingLayout(nullptr), m_playbackLayout(nullptr)
+{
+    initUI();
+
+    m_fileManager = new FileManager(this);
+    if (!m_fileManager->initialize())
+    {
+        qWarning() << "文件管理器初始化失败";
+    }
+
+    m_screenRecorder = new ScreenRecorder(this);
+    m_screenRecorder->initialize();
+    m_screenRecorder->setOutputDir(m_fileManager->getCurrentDateDir());
+
+    m_videoPlayer = new VideoPlayer(this);
+    m_videoPlayer->initialize();
+
+    connectSignals();
+
+    refreshFileList();
+
+    setWindowTitle("屏幕录制与播放软件");
+    setMinimumSize(1000, 800);
+
+    qDebug() << "MainWindow初始化完成";
+}
+
+MainWindow::~MainWindow()
+{
+    if (m_recordingTimer && m_recordingTimer->isActive())
+    {
+        m_recordingTimer->stop();
+    }
+
+    delete m_recordingTimer;
+    delete m_tabManager;
+
+    qDebug() << "MainWindow析构完成";
+}
+
+void MainWindow::initUI()
+{
+    QWidget *centralWidget = new QWidget(this);
+    setCentralWidget(centralWidget);
+
+    m_mainLayout = new QVBoxLayout(centralWidget);
+
+    m_tabWidget = new QTabWidget(this);
+    m_mainLayout->addWidget(m_tabWidget);
+
+    m_tabManager = new TabManager(m_tabWidget, this);
+
+    initRecordingTab();
+    initPlaybackTab();
+
+    m_recordingTimer = new QTimer(this);
+    m_recordingTimer->setInterval(1000);
+}
+
+void MainWindow::initRecordingTab()
+{
+    m_recordingTab = new QWidget();
+    m_recordingLayout = new QVBoxLayout(m_recordingTab);
+
+    QHBoxLayout *recordButtonLayout = new QHBoxLayout();
+
+    m_startRecordBtn = new QPushButton("开始录制", m_recordingTab);
+    m_startRecordBtn->setMinimumHeight(40);
+    m_startRecordBtn->setStyleSheet("QPushButton { font-size: 14px; }");
+
+    m_stopRecordBtn = new QPushButton("停止录制", m_recordingTab);
+    m_stopRecordBtn->setMinimumHeight(40);
+    m_stopRecordBtn->setStyleSheet("QPushButton { font-size: 14px; }");
+    m_stopRecordBtn->setEnabled(false);
+
+    recordButtonLayout->addWidget(m_startRecordBtn);
+    recordButtonLayout->addWidget(m_stopRecordBtn);
+
+    m_recordingTimeLabel = new QLabel("录制时间: 00:00", m_recordingTab);
+    m_recordingTimeLabel->setStyleSheet("QLabel { font-size: 16px; font-weight: bold; }");
+    m_recordingTimeLabel->setAlignment(Qt::AlignCenter);
+
+    m_currentFileLabel = new QLabel("当前文件: 无", m_recordingTab);
+    m_currentFileLabel->setStyleSheet("QLabel { font-size: 12px; }");
+    m_currentFileLabel->setAlignment(Qt::AlignCenter);
+
+    m_recordingLayout->addLayout(recordButtonLayout);
+    m_recordingLayout->addWidget(m_recordingTimeLabel);
+    m_recordingLayout->addWidget(m_currentFileLabel);
+    m_recordingLayout->addStretch();
+
+    m_recordSlotLabel = new QLabel("操作: 无 | 槽: 无", m_recordingTab);
+    m_recordSlotLabel->setStyleSheet("QLabel { font-size: 11px; color: #95a5a6; padding: 4px; border-top: 1px solid #bdc3c7; }");
+    m_recordSlotLabel->setAlignment(Qt::AlignCenter);
+    m_recordingLayout->addWidget(m_recordSlotLabel);
+
+    m_tabWidget->addTab(m_recordingTab, "录制");
+}
+
+void MainWindow::initPlaybackTab()
+{
+    m_playbackTab = new QWidget();
+    m_playbackLayout = new QVBoxLayout(m_playbackTab);
+
+    QHBoxLayout *fileSelectLayout = new QHBoxLayout();
+    QLabel *fileSelectLabel = new QLabel("选择文件:", m_playbackTab);
+    m_fileComboBox = new QComboBox(m_playbackTab);
+    m_fileComboBox->setMinimumHeight(30);
+    m_fileComboBox->addItem("请选择视频文件");
+
+    fileSelectLayout->addWidget(fileSelectLabel);
+    fileSelectLayout->addWidget(m_fileComboBox);
+
+    QHBoxLayout *playButtonLayout = new QHBoxLayout();
+
+    m_startPlayBtn = new QPushButton("开始播放", m_playbackTab);
+    m_startPlayBtn->setMinimumHeight(40);
+    m_startPlayBtn->setStyleSheet("QPushButton { font-size: 14px; }");
+    m_startPlayBtn->setEnabled(false);
+
+    m_pausePlayBtn = new QPushButton("暂停/恢复", m_playbackTab);
+    m_pausePlayBtn->setMinimumHeight(40);
+    m_pausePlayBtn->setStyleSheet("QPushButton { font-size: 14px; }");
+    m_pausePlayBtn->setEnabled(false);
+
+    m_stopPlayBtn = new QPushButton("停止", m_playbackTab);
+    m_stopPlayBtn->setMinimumHeight(40);
+    m_stopPlayBtn->setStyleSheet("QPushButton { font-size: 14px; }");
+    m_stopPlayBtn->setEnabled(false);
+
+    playButtonLayout->addWidget(m_startPlayBtn);
+    playButtonLayout->addWidget(m_pausePlayBtn);
+    playButtonLayout->addWidget(m_stopPlayBtn);
+
+    m_videoWidget = new VideoRenderWidget(m_playbackTab);
+
+    m_playbackLayout->addLayout(fileSelectLayout);
+    m_playbackLayout->addLayout(playButtonLayout);
+    m_playbackLayout->addWidget(m_videoWidget, 1);
+
+    m_playSlotLabel = new QLabel("操作: 无 | 槽: 无", m_playbackTab);
+    m_playSlotLabel->setStyleSheet("QLabel { font-size: 11px; color: #95a5a6; padding: 4px; border-top: 1px solid #bdc3c7; }");
+    m_playSlotLabel->setAlignment(Qt::AlignCenter);
+    m_playbackLayout->addWidget(m_playSlotLabel);
+
+    m_tabWidget->addTab(m_playbackTab, "播放");
+}
+
+void MainWindow::connectSignals()
+{
+    connect(m_startRecordBtn, &QPushButton::clicked, this, &MainWindow::onStartRecording);
+    connect(m_stopRecordBtn, &QPushButton::clicked, this, &MainWindow::onStopRecording);
+
+    connect(m_startPlayBtn, &QPushButton::clicked, this, &MainWindow::onStartPlayback);
+    connect(m_pausePlayBtn, &QPushButton::clicked, this, &MainWindow::onPausePlayback);
+    connect(m_stopPlayBtn, &QPushButton::clicked, this, &MainWindow::onStopPlayback);
+
+    connect(m_fileComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onFileSelected);
+
+    connect(m_recordingTimer, &QTimer::timeout, this, &MainWindow::updateRecordingTime);
+
+    connect(m_tabManager, &TabManager::stateChanged, this, [this](TabManager::AppState)
+            { updateUIState(); });
+
+    connect(m_screenRecorder, &ScreenRecorder::recordingTimeUpdated, this, [this](int seconds)
+            {
+                m_recordingSeconds = seconds;
+                int minutes = seconds / 60;
+                int secs = seconds % 60;
+                m_recordingTimeLabel->setText(QString("%1:%2")
+                    .arg(minutes, 2, 10, QLatin1Char('0'))
+                    .arg(secs, 2, 10, QLatin1Char('0'))); });
+
+    connect(m_screenRecorder, &ScreenRecorder::recordStateChanged, this, [this](ScreenRecorder::RecordState state)
+            {
+                if (state == ScreenRecorder::Stopped || state == ScreenRecorder::Error)
+                {
+                    m_startRecordBtn->setEnabled(true);
+                    m_stopRecordBtn->setEnabled(false);
+                    m_currentFileLabel->setText(state == ScreenRecorder::Error ? "录制出错" : "录制已完成");
+                    m_tabManager->stopRecording();
+                    refreshFileList();
+                } });
+
+    connect(m_screenRecorder, &ScreenRecorder::recordError, this, [this](const QString &msg)
+            {
+                m_recordSlotLabel->setText(QString("错误: %1 [%2]").arg(msg, QTime::currentTime().toString("hh:mm:ss")));
+                QMessageBox::warning(this, "录制错误", msg); });
+
+    connect(m_videoPlayer, &VideoPlayer::frameReady, m_videoWidget, &VideoRenderWidget::presentFrame);
+
+    connect(m_videoPlayer, &VideoPlayer::playStateChanged, this, [this](VideoPlayer::PlayState state)
+            {
+                switch (state)
+                {
+                case VideoPlayer::Playing:
+                    m_startPlayBtn->setEnabled(false);
+                    m_pausePlayBtn->setEnabled(true);
+                    m_stopPlayBtn->setEnabled(true);
+                    m_fileComboBox->setEnabled(false);
+                    m_isPlaybackPaused = false;
+                    m_pausePlayBtn->setText("暂停/恢复");
+                    break;
+                case VideoPlayer::Paused:
+                    m_startPlayBtn->setEnabled(false);
+                    m_pausePlayBtn->setEnabled(true);
+                    m_stopPlayBtn->setEnabled(true);
+                    m_fileComboBox->setEnabled(false);
+                    m_isPlaybackPaused = true;
+                    m_pausePlayBtn->setText("暂停/恢复");
+                    break;
+                case VideoPlayer::Stopped:
+                    m_startPlayBtn->setEnabled(m_fileComboBox->currentIndex() > 0);
+                    m_pausePlayBtn->setEnabled(false);
+                    m_stopPlayBtn->setEnabled(false);
+                    m_fileComboBox->setEnabled(true);
+                    m_isPlaybackPaused = false;
+                    m_pausePlayBtn->setText("暂停/恢复");
+                    m_videoWidget->reset();
+                    break;
+                case VideoPlayer::Error:
+                    m_startPlayBtn->setEnabled(m_fileComboBox->currentIndex() > 0);
+                    m_pausePlayBtn->setEnabled(false);
+                    m_stopPlayBtn->setEnabled(false);
+                    m_fileComboBox->setEnabled(true);
+                    m_isPlaybackPaused = false;
+                    m_pausePlayBtn->setText("暂停/恢复");
+                    m_tabManager->stopPlayback();
+                    break;
+                } });
+
+    connect(m_videoPlayer, &VideoPlayer::playbackFinished, this, [this]()
+            {
+                m_playSlotLabel->setText(QString("播放完成 [%1]").arg(QTime::currentTime().toString("hh:mm:ss")));
+                m_videoPlayer->stopPlayback();
+                m_tabManager->stopPlayback(); });
+
+    connect(m_videoPlayer, &VideoPlayer::playbackError, this, [this](const QString &msg)
+            {
+                m_playSlotLabel->setText(QString("错误: %1 [%2]").arg(msg, QTime::currentTime().toString("hh:mm:ss")));
+                QMessageBox::warning(this, "播放错误", msg); });
+}
+
+void MainWindow::onStartRecording()
+{
+    qDebug() << "开始录制按钮点击";
+
+    m_recordSlotLabel->setText(QString("操作: 点击开始录制 | 槽: onStartRecording [%1]").arg(QTime::currentTime().toString("hh:mm:ss")));
+
+    if (!m_tabManager->startRecording())
+    {
+        qWarning() << "TabManager拒绝开始录制";
+        return;
+    }
+
+    m_screenRecorder->setOutputDir(m_fileManager->getCurrentDateDir());
+
+    if (!m_screenRecorder->startRecording())
+    {
+        qWarning() << "开始录制失败";
+        m_tabManager->stopRecording();
+        return;
+    }
+
+    m_recordingSeconds = 0;
+    m_recordingTimeLabel->setText("00:00");
+    m_currentFileLabel->setText(m_screenRecorder->getCurrentFileName());
+
+    m_startRecordBtn->setEnabled(false);
+    m_stopRecordBtn->setEnabled(true);
+}
+
+void MainWindow::onStopRecording()
+{
+    qDebug() << "停止录制按钮点击";
+
+    m_recordSlotLabel->setText(QString("操作: 点击停止录制 | 槽: onStopRecording [%1]").arg(QTime::currentTime().toString("hh:mm:ss")));
+
+    m_screenRecorder->stopRecording();
+    m_tabManager->stopRecording();
+
+    m_currentFileLabel->setText("录制已完成: " + m_screenRecorder->getCurrentFileName());
+
+    m_startRecordBtn->setEnabled(true);
+    m_stopRecordBtn->setEnabled(false);
+}
+
+void MainWindow::onStartPlayback()
+{
+    QString selectedFile = m_fileComboBox->currentText();
+    qDebug() << "开始播放按钮点击，选择文件:" << selectedFile;
+
+    m_playSlotLabel->setText(QString("操作: 点击开始播放 | 槽: onStartPlayback [%1]").arg(QTime::currentTime().toString("hh:mm:ss")));
+
+    if (!m_tabManager->startPlayback())
+    {
+        qWarning() << "TabManager拒绝开始播放";
+        return;
+    }
+
+    QString videoDir = m_fileManager->getCurrentDateDir();
+    QString filePath = videoDir + "/" + selectedFile;
+
+    if (!m_videoPlayer->openFile(filePath))
+    {
+        qWarning() << "打开视频文件失败:" << filePath;
+        m_tabManager->stopPlayback();
+        return;
+    }
+
+    if (!m_videoPlayer->startPlayback())
+    {
+        qWarning() << "开始播放失败";
+        m_tabManager->stopPlayback();
+        return;
+    }
+}
+
+void MainWindow::onPausePlayback()
+{
+    qDebug() << "暂停/恢复播放按钮点击";
+
+    if (m_isPlaybackPaused)
+    {
+        m_isPlaybackPaused = false;
+        m_pausePlayBtn->setText("暂停/恢复");
+        m_playSlotLabel->setText(QString("操作: 点击暂停/恢复(恢复) | 槽: onPausePlayback [%1]").arg(QTime::currentTime().toString("hh:mm:ss")));
+        m_videoPlayer->resumePlayback();
+    }
+    else
+    {
+        m_isPlaybackPaused = true;
+        m_pausePlayBtn->setText("暂停/恢复");
+        m_playSlotLabel->setText(QString("操作: 点击暂停/恢复(暂停) | 槽: onPausePlayback [%1]").arg(QTime::currentTime().toString("hh:mm:ss")));
+        m_videoPlayer->pausePlayback();
+    }
+}
+
+void MainWindow::onStopPlayback()
+{
+    qDebug() << "停止播放按钮点击";
+
+    m_playSlotLabel->setText(QString("操作: 点击停止播放 | 槽: onStopPlayback [%1]").arg(QTime::currentTime().toString("hh:mm:ss")));
+
+    m_videoPlayer->stopPlayback();
+    m_tabManager->stopPlayback();
+}
+
+void MainWindow::onFileSelected(int index)
+{
+    if (index > 0)
+    {
+        QString selectedFile = m_fileComboBox->itemText(index);
+        qDebug() << "文件选择改变:" << selectedFile;
+
+        m_playSlotLabel->setText(QString("操作: 选择文件(%1) | 槽: onFileSelected [%2]").arg(selectedFile, QTime::currentTime().toString("hh:mm:ss")));
+
+        m_startPlayBtn->setEnabled(true);
+    }
+    else
+    {
+        m_startPlayBtn->setEnabled(false);
+    }
+}
+
+void MainWindow::updateRecordingTime()
+{
+    m_recordingSeconds++;
+    int minutes = m_recordingSeconds / 60;
+    int seconds = m_recordingSeconds % 60;
+
+    QString timeText = QString("%1:%2")
+                           .arg(minutes, 2, 10, QLatin1Char('0'))
+                           .arg(seconds, 2, 10, QLatin1Char('0'));
+
+    m_recordingTimeLabel->setText(timeText);
+
+    if (m_recordingSeconds % 5 == 0)
+    {
+        m_currentFileLabel->setText(QString("录制中... 已录制 %1 秒").arg(m_recordingSeconds));
+    }
+}
+
+void MainWindow::updateUIState()
+{
+    TabManager::AppState currentState = m_tabManager->currentState();
+
+    switch (currentState)
+    {
+    case TabManager::Idle:
+        m_tabWidget->setTabEnabled(0, true);
+        m_tabWidget->setTabEnabled(1, true);
+        m_startRecordBtn->setEnabled(true);
+        m_startPlayBtn->setEnabled(m_fileComboBox->currentIndex() > 0);
+        break;
+
+    case TabManager::Recording:
+        m_tabWidget->setTabEnabled(1, false);
+        m_startPlayBtn->setEnabled(false);
+        m_pausePlayBtn->setEnabled(false);
+        m_stopPlayBtn->setEnabled(false);
+        break;
+
+    case TabManager::Playing:
+        m_tabWidget->setTabEnabled(0, false);
+        m_startRecordBtn->setEnabled(false);
+        m_stopRecordBtn->setEnabled(false);
+        break;
+    }
+}
+
+void MainWindow::refreshFileList()
+{
+    QString videoDir = m_fileManager->getCurrentDateDir();
+    QDir dir(videoDir);
+    QStringList filters;
+    filters << "*.mkv";
+    QStringList files = dir.entryList(filters, QDir::Files, QDir::Time);
+
+    m_fileComboBox->blockSignals(true);
+    m_fileComboBox->clear();
+    m_fileComboBox->addItem("请选择视频文件");
+    for (const QString &file : files)
+    {
+        m_fileComboBox->addItem(file);
+    }
+    m_fileComboBox->blockSignals(false);
+
+    m_startPlayBtn->setEnabled(false);
+}

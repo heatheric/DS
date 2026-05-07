@@ -1,284 +1,270 @@
-# CMakeLists.txt - Qt5+FFmpeg8屏幕录制与播放软件构建配置
-# 项目名称: Screen Recorder & Player
-# 平台: Windows 64位
-# 编译器: MinGW64 (GCC 12)
-
 cmake_minimum_required(VERSION 3.16)
 project(ScreenRecorderPlayer VERSION 1.0.0 LANGUAGES CXX)
 
-# 设置编译器路径（更新为新的MinGW路径）
-set(MINGW_DIR "D:/Program/mingw64_gcc12")
-set(CMAKE_C_COMPILER "${MINGW_DIR}/bin/gcc.exe")
-set(CMAKE_CXX_COMPILER "${MINGW_DIR}/bin/g++.exe")
+# ============================================================================
+# 构建模式
+# ============================================================================
 
-# 设置C++标准
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# 设置构建类型（只支持Release和RelWithDebInfo）
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
+# 仅支持 RelWithDebInfo（开发调试）和 Release（发布）
+if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(WARNING "Debug is not supported, falling back to RelWithDebInfo")
+    endif()
+    set(CMAKE_BUILD_TYPE "RelWithDebInfo")
 endif()
 
-# 验证构建类型
 if(NOT CMAKE_BUILD_TYPE MATCHES "^(Release|RelWithDebInfo)$")
-    message(FATAL_ERROR "只支持Release和RelWithDebInfo构建模式，当前模式: ${CMAKE_BUILD_TYPE}")
+    message(FATAL_ERROR "Unsupported build type: ${CMAKE_BUILD_TYPE}. Use Release or RelWithDebInfo.")
 endif()
 
-# 设置输出目录（项目根目录下的bin文件夹）
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-# 移除静态库输出目录设置（本项目不生成静态库）
+# 覆盖 CMake 默认的编译选项（在 project() 之后覆盖，避免被重置）
+# RelWithDebInfo: 无优化 + 调试符号（便于调试）
+set(CMAKE_C_FLAGS_RELWITHDEBINFO   "-O0 -g")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O0 -g")
+# Release: O2 优化 + 去除断言（生产发布）
+set(CMAKE_C_FLAGS_RELEASE   "-O2 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 
-# 设置编译器标志（64位优化）
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # 通用标志
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -m64")
-    
-    # Release模式：最大优化，无调试信息
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -ffunction-sections -fdata-sections")
-    
-    # RelWithDebInfo模式：不优化，包含调试信息（方便调试）
-    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O0 -g -ffunction-sections -fdata-sections")
-    
-    # 禁用Debug模式
-    set(CMAKE_CXX_FLAGS_DEBUG "")
-    
-    # 链接时优化
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections -m64")
+# ============================================================================
+# 外部依赖路径检查
+# ============================================================================
+
+if(NOT Qt5_DIR)
+    message(FATAL_ERROR "Qt5_DIR is not set. Pass -DQt5_DIR=<path>")
 endif()
 
-# Qt5配置
-set(QT5_DIR "X:/Qt/5.15.13/gcc12")
-set(CMAKE_PREFIX_PATH ${QT5_DIR} ${CMAKE_PREFIX_PATH})
+if(NOT FFMPEG_ROOT)
+    message(FATAL_ERROR "FFMPEG_ROOT is not set. Pass -DFFMPEG_ROOT=<path>")
+endif()
 
-# 查找Qt5组件
-find_package(Qt5 REQUIRED COMPONENTS
-    Core
-    Widgets
-    Gui
-    OpenGL
-    Concurrent
-)
+# ============================================================================
+# 查找 Qt5
+# ============================================================================
 
-# 启用Qt5的MOC、UIC、RCC自动处理
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTORCC ON)
+find_package(Qt5 REQUIRED COMPONENTS Core Widgets Gui OpenGL Concurrent)
 
-# FFmpeg8配置
-set(FFMPEG_DIR "D:/Program/ffmpeg")
+# ============================================================================
+# 查找 FFmpeg 库
+# ============================================================================
 
-# 设置FFmpeg包含目录
-set(FFMPEG_INCLUDE_DIRS
-    ${FFMPEG_DIR}/include
-)
+set(FFMPEG_INCLUDE_DIR ${FFMPEG_ROOT}/include)
+set(FFMPEG_LIB_DIR ${FFMPEG_ROOT}/lib)
 
-# 设置FFmpeg库目录
-set(FFMPEG_LIBRARY_DIRS
-    ${FFMPEG_DIR}/lib
-)
+set(FFMPEG_LIB_NAMES avcodec avformat avdevice avutil avfilter swresample swscale)
+foreach(LIB ${FFMPEG_LIB_NAMES})
+    find_library(FFMPEG_${LIB}_LIBRARY
+        NAMES ${LIB}
+        PATHS ${FFMPEG_LIB_DIR}
+        REQUIRED
+    )
+    list(APPEND FFMPEG_LIBRARIES ${FFMPEG_${LIB}_LIBRARY})
+endforeach()
 
-# 查找FFmpeg库
-find_library(AVCODEC_LIBRARY
-    NAMES avcodec
-    PATHS ${FFMPEG_LIBRARY_DIRS}
-    REQUIRED
-)
+# ============================================================================
+# Windows 系统库（项目级全局链接依赖，所有目标共用）
+# ============================================================================
 
-find_library(AVFORMAT_LIBRARY
-    NAMES avformat
-    PATHS ${FFMPEG_LIBRARY_DIRS}
-    REQUIRED
-)
+set(WIN32_SYSTEM_LIBS ws2_32 user32 gdi32)
 
-find_library(AVDEVICE_LIBRARY
-    NAMES avdevice
-    PATHS ${FFMPEG_LIBRARY_DIRS}
-    REQUIRED
-)
+# ============================================================================
+# 目标: ScreenRecorderPlayer（主程序）
+# ============================================================================
 
-find_library(AVUTIL_LIBRARY
-    NAMES avutil
-    PATHS ${FFMPEG_LIBRARY_DIRS}
-    REQUIRED
-)
+add_executable(ScreenRecorderPlayer)
 
-find_library(AVFILTER_LIBRARY
-    NAMES avfilter
-    PATHS ${FFMPEG_LIBRARY_DIRS}
-    REQUIRED
-)
-
-find_library(SWRESAMPLE_LIBRARY
-    NAMES swresample
-    PATHS ${FFMPEG_LIBRARY_DIRS}
-    REQUIRED
-)
-
-find_library(SWSCALE_LIBRARY
-    NAMES swscale
-    PATHS ${FFMPEG_LIBRARY_DIRS}
-    REQUIRED
-)
-
-# 设置FFmpeg库变量
-set(FFMPEG_LIBRARIES
-    ${AVCODEC_LIBRARY}
-    ${AVFORMAT_LIBRARY}
-    ${AVDEVICE_LIBRARY}
-    ${AVUTIL_LIBRARY}
-    ${AVFILTER_LIBRARY}
-    ${SWRESAMPLE_LIBRARY}
-    ${SWSCALE_LIBRARY}
-)
-
-# 设置包含目录
-include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/hpp
-    ${FFMPEG_INCLUDE_DIRS}
-)
-
-# 设置源文件
-set(SOURCES
+target_sources(ScreenRecorderPlayer PRIVATE
     cpp/main.cpp
     cpp/mainwindow.cpp
+    cpp/recordwidget.cpp
     cpp/screenrecorder.cpp
     cpp/videoplayer.cpp
     cpp/filemanager.cpp
     cpp/tabmanager.cpp
-)
-
-# 设置头文件（用于MOC处理）
-set(HEADERS
     hpp/mainwindow.hpp
+    hpp/recordwidget.hpp
     hpp/screenrecorder.hpp
     hpp/videoplayer.hpp
     hpp/filemanager.hpp
     hpp/tabmanager.hpp
 )
 
-# 创建可执行文件
-add_executable(ScreenRecorderPlayer
-    ${SOURCES}
-    ${HEADERS}
+target_compile_features(ScreenRecorderPlayer PRIVATE cxx_std_17)
+
+target_include_directories(ScreenRecorderPlayer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hpp
+    ${FFMPEG_INCLUDE_DIR}
 )
 
-# 链接Qt5库
-target_link_libraries(ScreenRecorderPlayer
+target_compile_definitions(ScreenRecorderPlayer PRIVATE
+    QT_DEPRECATED_WARNINGS
+    QT_DISABLE_DEPRECATED_BEFORE=0x060000
+)
+
+target_compile_options(ScreenRecorderPlayer PRIVATE
+    -Wall -Wextra -m64
+    -ffunction-sections -fdata-sections
+)
+
+target_link_options(ScreenRecorderPlayer PRIVATE
+    -Wl,--gc-sections -m64
+)
+
+target_link_libraries(ScreenRecorderPlayer PRIVATE
     Qt5::Core
     Qt5::Widgets
     Qt5::Gui
     Qt5::OpenGL
     Qt5::Concurrent
-)
-
-# 链接FFmpeg库
-target_link_libraries(ScreenRecorderPlayer
     ${FFMPEG_LIBRARIES}
-)
-
-# 设置目标属性
-target_compile_definitions(ScreenRecorderPlayer
-    PRIVATE
-        QT_DEPRECATED_WARNINGS
-        QT_DISABLE_DEPRECATED_BEFORE=0x060000
-)
-
-# Windows特定设置
-if(WIN32)
-    # 设置Windows子系统为控制台（便于调试）
-    set_target_properties(ScreenRecorderPlayer PROPERTIES
-        WIN32_EXECUTABLE FALSE
-    )
-    
-    # 添加Windows库
-    target_link_libraries(ScreenRecorderPlayer
-        ws2_32
-        user32
-        gdi32
-        opengl32
-        d3d11
-        dxgi
-    )
-    
-    # 设置运行时库
-    if(MSVC)
-        set_target_properties(ScreenRecorderPlayer PROPERTIES
-            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-        )
-    endif()
-endif()
-
-# workdir目录由运行时程序自行检查创建
-
-# 测试目标：录屏功能测试
-add_executable(TestRecorder
-    cpp/test_recorder.cpp
-    cpp/screenrecorder.cpp
-    cpp/filemanager.cpp
-    hpp/screenrecorder.hpp
-    hpp/filemanager.hpp
-)
-
-target_link_libraries(TestRecorder
-    Qt5::Core
-    ${FFMPEG_LIBRARIES}
-    ws2_32
-    user32
-    gdi32
+    ${WIN32_SYSTEM_LIBS}
     opengl32
     d3d11
     dxgi
 )
 
-target_compile_definitions(TestRecorder
-    PRIVATE
-        QT_DEPRECATED_WARNINGS
+set_target_properties(ScreenRecorderPlayer PROPERTIES
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    AUTOMOC ON
+    AUTOUIC ON
+    AUTORCC ON
+    WIN32_EXECUTABLE FALSE
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
 )
 
-# 测试目标：FFmpeg解码 + QOpenGL渲染测试
-add_executable(TestPlayer
-    cpp/test_player.cpp
+# ============================================================================
+# 目标: test_dxgi_recorder（录制功能测试，无 Qt 依赖）
+# ============================================================================
+
+add_executable(test_dxgi_recorder)
+
+target_sources(test_dxgi_recorder PRIVATE
+    cpp/test_dxgi_recorder.cpp
 )
 
-target_link_libraries(TestPlayer
+target_compile_features(test_dxgi_recorder PRIVATE cxx_std_17)
+
+target_include_directories(test_dxgi_recorder PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hpp
+    ${FFMPEG_INCLUDE_DIR}
+)
+
+target_compile_definitions(test_dxgi_recorder PRIVATE
+    QT_DEPRECATED_WARNINGS
+    QT_DISABLE_DEPRECATED_BEFORE=0x060000
+)
+
+target_compile_options(test_dxgi_recorder PRIVATE
+    -Wall -Wextra -m64
+    -ffunction-sections -fdata-sections
+)
+
+target_link_options(test_dxgi_recorder PRIVATE
+    -Wl,--gc-sections -m64
+)
+
+target_link_libraries(test_dxgi_recorder PRIVATE
+    ${FFMPEG_LIBRARIES}
+    d3d11
+    dxgi
+    ${WIN32_SYSTEM_LIBS}
+)
+
+set_target_properties(test_dxgi_recorder PROPERTIES
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    WIN32_EXECUTABLE FALSE
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+)
+
+# ============================================================================
+# 目标: test_ffmpeg_player（播放功能测试）
+# ============================================================================
+
+add_executable(test_ffmpeg_player)
+
+target_sources(test_ffmpeg_player PRIVATE
+    cpp/test_ffmpeg_player.cpp
+)
+
+target_compile_features(test_ffmpeg_player PRIVATE cxx_std_17)
+
+target_include_directories(test_ffmpeg_player PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/hpp
+    ${FFMPEG_INCLUDE_DIR}
+)
+
+target_compile_definitions(test_ffmpeg_player PRIVATE
+    QT_DEPRECATED_WARNINGS
+    QT_DISABLE_DEPRECATED_BEFORE=0x060000
+)
+
+target_compile_options(test_ffmpeg_player PRIVATE
+    -Wall -Wextra -m64
+    -ffunction-sections -fdata-sections
+)
+
+target_link_options(test_ffmpeg_player PRIVATE
+    -Wl,--gc-sections -m64
+)
+
+target_link_libraries(test_ffmpeg_player PRIVATE
     Qt5::Core
     Qt5::Widgets
     Qt5::Gui
+    Qt5::OpenGL
     ${FFMPEG_LIBRARIES}
-    ws2_32
-    user32
-    gdi32
+    ${WIN32_SYSTEM_LIBS}
     opengl32
 )
 
-target_compile_definitions(TestPlayer
-    PRIVATE
-        QT_DEPRECATED_WARNINGS
+set_target_properties(test_ffmpeg_player PROPERTIES
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    AUTOMOC ON
+    WIN32_EXECUTABLE FALSE
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
 )
+# 原属性（无 AUTOUIC/AUTORCC）:
+# set_target_properties(test_ffmpeg_player PROPERTIES
+#     CXX_STANDARD_REQUIRED ON
+#     CXX_EXTENSIONS OFF
+#     AUTOMOC ON
+#     WIN32_EXECUTABLE FALSE
+#     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+# )
 
-# 构建后信息显示
-message(STATUS "项目配置完成:")
-message(STATUS "  项目名称: ${PROJECT_NAME}")
-message(STATUS "  版本: ${PROJECT_VERSION}")
-message(STATUS "  构建类型: ${CMAKE_BUILD_TYPE}")
-message(STATUS "  C++标准: ${CMAKE_CXX_STANDARD}")
-message(STATUS "  Qt5路径: ${QT5_DIR}")
-message(STATUS "  FFmpeg路径: ${FFMPEG_DIR}")
-message(STATUS "  输出目录: ${CMAKE_SOURCE_DIR}/bin")
+# ============================================================================
+# 安装规则（已禁用 — 发布通过 bin/run.bat 启动）
+#   cmake --install build/Release --prefix ${custom.installBase}
+# ============================================================================
+#
+# install(TARGETS ScreenRecorderPlayer RUNTIME DESTINATION .)
+# install(DIRECTORY ${FFMPEG_ROOT}/bin/
+#     DESTINATION .
+#     FILES_MATCHING PATTERN "*.dll"
+# )
+# install(DIRECTORY ${Qt5_DIR}/../../bin/
+#     DESTINATION .
+#     FILES_MATCHING PATTERN "Qt5*.dll"
+# )
 
-# 构建帮助信息
-message("\n构建说明:")
-message("  构建项目: cmake --build . --config Release")
-message("  清理构建: cmake --build . --target clean")
-message("  运行程序: ./bin/ScreenRecorderPlayer.exe")
+# ============================================================================
+# 编译命令导出（供 IDE 智能提示）
+# ============================================================================
 
-# 检查依赖项
-if(NOT Qt5_FOUND)
-    message(WARNING "Qt5库未找到，请检查QT5_DIR路径设置")
-endif()
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if(NOT AVCODEC_LIBRARY)
-    message(WARNING "FFmpeg库未找到，请检查FFMPEG_DIR路径设置")
-endif()
+# ============================================================================
+# 构建概览
+# ============================================================================
+
+message(STATUS "========================================")
+message(STATUS "  Project: ${PROJECT_NAME} v${PROJECT_VERSION}")
+message(STATUS "  Build:   ${CMAKE_BUILD_TYPE}")
+message(STATUS "  C++:     C++17")
+message(STATUS "  Make:    ${CMAKE_MAKE_PROGRAM}")
+message(STATUS "  Qt5:     ${Qt5_DIR}")
+message(STATUS "  FFmpeg:  ${FFMPEG_ROOT}")
+message(STATUS "  Output:  ${CMAKE_SOURCE_DIR}/bin")
+message(STATUS "========================================")

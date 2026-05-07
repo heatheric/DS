@@ -1,0 +1,11 @@
+buildType:
+  default: RelWithDebInfo
+  choices:
+    RelWithDebInfo:
+      short: RelWithDebInfo
+      long: RelWithDebInfo — 无优化 + 调试符号（开发阶段使用）
+      buildType: RelWithDebInfo
+    Release:
+      short: Release
+      long: Release — O2 优化（发布阶段使用）
+      buildType: Release

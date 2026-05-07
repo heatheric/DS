@@ -2,124 +2,299 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "构建项目 (Release)",
-      "type": "shell",
-      "command": "cmake",
-      "args": ["--build", "${workspaceFolder}/build", "--config", "Release"],
-      "group": "build",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "shared"
-      },
-      "problemMatcher": ["$gcc"]
-    },
-    {
-      "label": "构建项目 (RelWithDebInfo)",
+      "label": "cmake: configure (RelWithDebInfo)",
       "type": "shell",
       "command": "cmake",
       "args": [
-        "--build",
-        "${workspaceFolder}/build",
-        "--config",
-        "RelWithDebInfo"
-      ],
-      "group": "build",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "shared"
-      },
-      "problemMatcher": ["$gcc"]
-    },
-    {
-      "label": "清理构建",
-      "type": "shell",
-      "command": "cmake",
-      "args": ["--build", "${workspaceFolder}/build", "--target", "clean"],
-      "group": "build",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "重新配置CMake (Release)",
-      "type": "shell",
-      "command": "cmake",
-      "args": [
-        "-B",
-        "${workspaceFolder}/build",
-        "-S",
-        "${workspaceFolder}",
-        "-G",
-        "MinGW Makefiles",
-        "-DCMAKE_BUILD_TYPE=Release",
-        "-DCMAKE_C_COMPILER=D:/Program/mingw64_gcc12/bin/gcc.exe",
-        "-DCMAKE_CXX_COMPILER=D:/Program/mingw64_gcc12/bin/g++.exe",
-        "-DCMAKE_MAKE_PROGRAM=D:/Program/mingw64_gcc12/bin/mingw32-make.exe"
-      ],
-      "group": "build",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "重新配置CMake (RelWithDebInfo)",
-      "type": "shell",
-      "command": "cmake",
-      "args": [
-        "-B",
-        "${workspaceFolder}/build",
-        "-S",
-        "${workspaceFolder}",
-        "-G",
-        "MinGW Makefiles",
+        "-S", "${workspaceFolder}",
+        "-B", "${workspaceFolder}/build/RelWithDebInfo",
+        "-G", "MinGW Makefiles",
         "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
-        "-DCMAKE_C_COMPILER=D:/Program/mingw64_gcc12/bin/gcc.exe",
-        "-DCMAKE_CXX_COMPILER=D:/Program/mingw64_gcc12/bin/g++.exe",
-        "-DCMAKE_MAKE_PROGRAM=D:/Program/mingw64_gcc12/bin/mingw32-make.exe"
+        "-DCMAKE_C_COMPILER=${config:custom.mingwBase}/bin/gcc.exe",
+        "-DCMAKE_CXX_COMPILER=${config:custom.mingwBase}/bin/g++.exe",
+        "-DQt5_DIR=${config:custom.qt5Base}/lib/cmake/Qt5",
+        "-DFFMPEG_ROOT=${config:custom.ffmpegBase}"
       ],
-      "group": "build",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "shared"
+      "options": {
+        "env": {
+          "PATH": "${config:custom.mingwBase}/bin;${config:custom.qt5Base}/bin;${config:custom.ffmpegBase}/bin;${env:PATH}"
+        }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
       }
     },
     {
-      "label": "运行程序 (Release)",
+      "label": "cmake: clean (RelWithDebInfo)",
       "type": "shell",
-      "command": "${workspaceFolder}/bin/ScreenRecorderPlayer.exe",
-      "group": "test",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "shared"
-      },
-      "dependsOn": "构建项目 (Release)"
+      "command": "cmake",
+      "args": [
+        "--build", "${workspaceFolder}/build/RelWithDebInfo",
+        "--target", "clean"
+      ],
+      "group": "build"
     },
     {
-      "label": "运行程序 (RelWithDebInfo)",
+      "label": "cmake: build (RelWithDebInfo)",
       "type": "shell",
-      "command": "${workspaceFolder}/bin/ScreenRecorderPlayer.exe",
-      "group": "test",
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "shared"
+      "command": "cmake",
+      "args": [
+        "--build", "${workspaceFolder}/build/RelWithDebInfo",
+        "-j8"
+      ],
+      "group": "build",
+      "dependsOn": [
+        "cmake: configure (RelWithDebInfo)"
+      ]
+    },
+    {
+      "label": "cmake: clean rebuild (RelWithDebInfo)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "cmake: clean (RelWithDebInfo)",
+        "cmake: build (RelWithDebInfo)"
+      ]
+    },
+    {
+      "label": "cmake: configure (Release)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-S", "${workspaceFolder}",
+        "-B", "${workspaceFolder}/build/Release",
+        "-G", "MinGW Makefiles",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_C_COMPILER=${config:custom.mingwBase}/bin/gcc.exe",
+        "-DCMAKE_CXX_COMPILER=${config:custom.mingwBase}/bin/g++.exe",
+        "-DQt5_DIR=${config:custom.qt5Base}/lib/cmake/Qt5",
+        "-DFFMPEG_ROOT=${config:custom.ffmpegBase}"
+      ],
+      "options": {
+        "env": {
+          "PATH": "${config:custom.mingwBase}/bin;${config:custom.qt5Base}/bin;${config:custom.ffmpegBase}/bin;${env:PATH}"
+        }
       },
-      "dependsOn": "构建项目 (RelWithDebInfo)"
+      "group": "build"
+    },
+    {
+      "label": "cmake: clean (Release)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build", "${workspaceFolder}/build/Release",
+        "--target", "clean"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "cmake: build (Release)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build", "${workspaceFolder}/build/Release",
+        "-j8"
+      ],
+      "group": "build",
+      "dependsOn": [
+        "cmake: configure (Release)"
+      ]
+    },
+    {
+      "label": "cmake: clean rebuild (Release)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "cmake: clean (Release)",
+        "cmake: build (Release)"
+      ]
+    },
+    {
+      "label": "ScreenRecorderPlayer: configure (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-S", "${workspaceFolder}",
+        "-B", "${workspaceFolder}/build/RelWithDebInfo",
+        "-G", "MinGW Makefiles",
+        "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+        "-DCMAKE_C_COMPILER=${config:custom.mingwBase}/bin/gcc.exe",
+        "-DCMAKE_CXX_COMPILER=${config:custom.mingwBase}/bin/g++.exe",
+        "-DQt5_DIR=${config:custom.qt5Base}/lib/cmake/Qt5",
+        "-DFFMPEG_ROOT=${config:custom.ffmpegBase}"
+      ],
+      "options": {
+        "env": {
+          "PATH": "${config:custom.mingwBase}/bin;${config:custom.qt5Base}/bin;${config:custom.ffmpegBase}/bin;${env:PATH}"
+        }
+      },
+      "group": "build"
+    },
+    {
+      "label": "ScreenRecorderPlayer: clean (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-E", "remove", "-f",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/ScreenRecorderPlayer.dir/ScreenRecorderPlayer_autogen/mocs_compilation.cpp.obj",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/ScreenRecorderPlayer.dir/cpp/main.cpp.obj",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/ScreenRecorderPlayer.dir/cpp/mainwindow.cpp.obj",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/ScreenRecorderPlayer.dir/cpp/recordwidget.cpp.obj",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/ScreenRecorderPlayer.dir/cpp/screenrecorder.cpp.obj",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/ScreenRecorderPlayer.dir/cpp/videoplayer.cpp.obj",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/ScreenRecorderPlayer.dir/cpp/filemanager.cpp.obj",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/ScreenRecorderPlayer.dir/cpp/tabmanager.cpp.obj",
+        "${workspaceFolder}/bin/ScreenRecorderPlayer.exe"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "ScreenRecorderPlayer: build (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build", "${workspaceFolder}/build/RelWithDebInfo",
+        "--target", "ScreenRecorderPlayer",
+        "-j8"
+      ],
+      "options": {
+        "env": {
+          "PATH": "${config:custom.mingwBase}/bin;${config:custom.qt5Base}/bin;${config:custom.ffmpegBase}/bin;${env:PATH}"
+        }
+      },
+      "group": "build",
+      "dependsOn": [
+        "ScreenRecorderPlayer: configure (RelWithDebInfo)"
+      ]
+    },
+    {
+      "label": "ScreenRecorderPlayer: rebuild (RelWithDebInfo)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "ScreenRecorderPlayer: clean (RelWithDebInfo)",
+        "ScreenRecorderPlayer: build (RelWithDebInfo)"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "test_dxgi_recorder: configure (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-S", "${workspaceFolder}",
+        "-B", "${workspaceFolder}/build/RelWithDebInfo",
+        "-G", "MinGW Makefiles",
+        "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+        "-DCMAKE_C_COMPILER=${config:custom.mingwBase}/bin/gcc.exe",
+        "-DCMAKE_CXX_COMPILER=${config:custom.mingwBase}/bin/g++.exe",
+        "-DQt5_DIR=${config:custom.qt5Base}/lib/cmake/Qt5",
+        "-DFFMPEG_ROOT=${config:custom.ffmpegBase}"
+      ],
+      "options": {
+        "env": {
+          "PATH": "${config:custom.mingwBase}/bin;${config:custom.qt5Base}/bin;${config:custom.ffmpegBase}/bin;${env:PATH}"
+        }
+      },
+      "group": "build"
+    },
+    {
+      "label": "test_dxgi_recorder: clean (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-E", "remove", "-f",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/test_dxgi_recorder.dir/cpp/test_dxgi_recorder.cpp.obj",
+        "${workspaceFolder}/bin/test_dxgi_recorder.exe"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "test_dxgi_recorder: build (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build", "${workspaceFolder}/build/RelWithDebInfo",
+        "--target", "test_dxgi_recorder",
+        "-j8"
+      ],
+      "options": {
+        "env": {
+          "PATH": "${config:custom.mingwBase}/bin;${config:custom.qt5Base}/bin;${config:custom.ffmpegBase}/bin;${env:PATH}"
+        }
+      },
+      "group": "build",
+      "dependsOn": [
+        "test_dxgi_recorder: configure (RelWithDebInfo)"
+      ]
+    },
+    {
+      "label": "test_dxgi_recorder: rebuild (RelWithDebInfo)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "test_dxgi_recorder: clean (RelWithDebInfo)",
+        "test_dxgi_recorder: build (RelWithDebInfo)"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "test_ffmpeg_player: configure (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-S", "${workspaceFolder}",
+        "-B", "${workspaceFolder}/build/RelWithDebInfo",
+        "-G", "MinGW Makefiles",
+        "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+        "-DCMAKE_C_COMPILER=${config:custom.mingwBase}/bin/gcc.exe",
+        "-DCMAKE_CXX_COMPILER=${config:custom.mingwBase}/bin/g++.exe",
+        "-DQt5_DIR=${config:custom.qt5Base}/lib/cmake/Qt5",
+        "-DFFMPEG_ROOT=${config:custom.ffmpegBase}"
+      ],
+      "options": {
+        "env": {
+          "PATH": "${config:custom.mingwBase}/bin;${config:custom.qt5Base}/bin;${config:custom.ffmpegBase}/bin;${env:PATH}"
+        }
+      },
+      "group": "build"
+    },
+    {
+      "label": "test_ffmpeg_player: clean (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-E", "remove", "-f",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/test_ffmpeg_player.dir/cpp/test_ffmpeg_player.cpp.obj",
+        "${workspaceFolder}/build/RelWithDebInfo/CMakeFiles/test_ffmpeg_player.dir/test_ffmpeg_player_autogen/mocs_compilation.cpp.obj",
+        "${workspaceFolder}/bin/test_ffmpeg_player.exe"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "test_ffmpeg_player: build (RelWithDebInfo)",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build", "${workspaceFolder}/build/RelWithDebInfo",
+        "--target", "test_ffmpeg_player",
+        "-j8"
+      ],
+      "options": {
+        "env": {
+          "PATH": "${config:custom.mingwBase}/bin;${config:custom.qt5Base}/bin;${config:custom.ffmpegBase}/bin;${env:PATH}"
+        }
+      },
+      "group": "build",
+      "dependsOn": [
+        "test_ffmpeg_player: configure (RelWithDebInfo)"
+      ]
+    },
+    {
+      "label": "test_ffmpeg_player: rebuild (RelWithDebInfo)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "test_ffmpeg_player: clean (RelWithDebInfo)",
+        "test_ffmpeg_player: build (RelWithDebInfo)"
+      ],
+      "group": "build"
     }
   ]
 }
